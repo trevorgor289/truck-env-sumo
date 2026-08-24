@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.venv/
+
+# Regenerated at runtime by road.py -- no need to version generated SUMO network files
+road/*.net.xml
+road/*.rou.xml
+road/*.edg.xml
+road/*.nod.xml
+road/*.sumocfg
+road/*.settings.xml
+
+# Intermediate training checkpoints are large and numerous (~245KB x hundreds per run).
+# Keep model_final.zip (completed runs) and let specific latest checkpoints for
+# interrupted runs be added explicitly with `git add -f` if needed.
+logs/*/model_*_steps.zip
+
+# Per-run tensorboard event files -- regenerable from monitor.csv/events.csv, not needed
+logs/*/DQN_1/
+logs/*/PPO_1/
