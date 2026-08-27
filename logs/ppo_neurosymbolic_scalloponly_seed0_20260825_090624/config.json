@@ -1,0 +1,144 @@
+{
+  "algo": "ppo_neurosymbolic_scallop_only",
+  "timesteps": 8000,
+  "seed": 0,
+  "use_gui": false,
+  "checkpoint_freq": 2000,
+  "sb3_version": "2.9.0",
+  "sumo_version": "1.27.1",
+  "sim_params": {
+    "sim_step_length": 0.1,
+    "long_control_duration": 1.0,
+    "max_steps": 500,
+    "init_steps": 40,
+    "nb_vehicles": 15,
+    "remove_sumo_warnings": true,
+    "safety_check": false,
+    "sensor_range": 200.0,
+    "sensor_nb_vehicles": 15,
+    "target_veh_short_gap": 1.0,
+    "target_veh_medium_gap": 2.0,
+    "target_veh_long_gap": 3.0,
+    "cruise_acceleration": 1.0,
+    "cruise_deceleration": -1.0,
+    "collision_penalty": 10.0,
+    "near_collision_penalty": 10.0,
+    "outside_road_penalty": 10.0,
+    "lane_change_penalty": 1.0,
+    "completion_reward": 100.0
+  },
+  "road_params": {
+    "name": "highway",
+    "nb_lanes": 3,
+    "lane_width": 3.2,
+    "max_road_speed": 100.0,
+    "min_road_speed": 1.0,
+    "lane_change_duration": 4,
+    "speed_range": [
+      15,
+      35
+    ],
+    "overtake_right": "true",
+    "nodes": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        400.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ],
+      [
+        3000.0,
+        0.0
+      ],
+      [
+        5000.0,
+        0.0
+      ]
+    ],
+    "edges": [
+      "add",
+      "start",
+      "highway",
+      "exit"
+    ],
+    "vehicles": [
+      {
+        "id": "truck",
+        "vClass": "trailer",
+        "length": 16.0,
+        "width": 2.55,
+        "maxSpeed": 25.0,
+        "speedFactor": 1.0,
+        "speedDev": 0,
+        "carFollowModel": "Krauss",
+        "minGap": 2.5,
+        "accel": 1.1,
+        "decel": 4.0,
+        "emergencyDecel": 9.0,
+        "sigma": 0.0,
+        "tau": 1.0,
+        "color": "1,0,0",
+        "laneChangeModel": "LC2013",
+        "lcStrategic": 0,
+        "lcCooperative": 0,
+        "lcSpeedGain": 1.0,
+        "lcKeepRight": 0,
+        "lcOvertakeRight": 0,
+        "lcOpposite": 1.0,
+        "lcLookaheadLeft": 2.0,
+        "lcSpeedGainRight": 1.0,
+        "lcAssertive": 1.0,
+        "lcMaxSpeedLatFactor": 1.0,
+        "lcSigma": 0.0
+      },
+      {
+        "id": "car",
+        "vClass": "passenger",
+        "length": 4.8,
+        "width": 1.8,
+        "maxSpeed": 100.0,
+        "speedFactor": 1.0,
+        "speedDev": 0,
+        "carFollowModel": "Krauss",
+        "minGap": 2.5,
+        "accel": 2.6,
+        "decel": 4.5,
+        "emergencyDecel": 9.0,
+        "sigma": 0.0,
+        "tau": 1.0,
+        "laneChangeModel": "LC2013",
+        "lcStrategic": 0,
+        "lcCooperative": 0,
+        "lcSpeedGain": 1.0,
+        "lcKeepRight": 0,
+        "lcOvertakeRight": 0,
+        "lcOpposite": 1.0,
+        "lcLookaheadLeft": 2.0,
+        "lcSpeedGainRight": 1.0,
+        "lcAssertive": 1.0,
+        "lcMaxSpeedLatFactor": 1.0,
+        "lcSigma": 0.0
+      }
+    ],
+    "collision_action": "warn",
+    "emergency_decel_warn_threshold": 10,
+    "no_display_step": "true",
+    "view_position": [
+      750,
+      0
+    ],
+    "zoom": 3500,
+    "view_delay": 200,
+    "info_pos": [
+      0,
+      35
+    ]
+  },
+  "note": "Policy is ScallopOnlyPolicy: the actor's MLP only produces facts (unsafe_gap, leader_close) for Scallop's merge_planner.scl; Scallop's next_action output IS the action logits directly, no separate raw-logits pathway and no combination step (the critic/value_net is still a normal learned component). This is the PPO counterpart of dqn_neurosymbolic_scalloponly_seed0_20260820_070458, and the closest match in this repo to the Scallop paper's own PacMan-Maze architecture. Compare against ppo_seed0_20260818_135738 (pure PPO baseline), ppo_neurosymbolic_seed0_20260818_142432 (fixed log-additive combine), and dqn_neurosymbolic_scalloponly_seed0_20260820_070458 (same scallop-only structure, DQN instead of PPO)."
+}

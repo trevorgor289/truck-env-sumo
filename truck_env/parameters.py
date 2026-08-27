@@ -17,11 +17,11 @@ sim_params["sim_step_length"] = 0.1        # SUMO physics step, seconds
 sim_params["long_control_duration"] = 1.0  # seconds of physics per longitudinal RL action
 sim_params["max_steps"] = 500              # max RL steps per episode
 sim_params["init_steps"] = int(4 * (sim_params["long_control_duration"] / sim_params["sim_step_length"]))
-sim_params["nb_vehicles"] = 15
+sim_params["nb_vehicles"] = 25              # was 15 -- denser traffic, tighter gaps
 sim_params["remove_sumo_warnings"] = True
 sim_params["safety_check"] = False         # if True, SUMO overrides "unsafe" ego decisions
 sim_params["sensor_range"] = 200.0
-sim_params["sensor_nb_vehicles"] = 15
+sim_params["sensor_nb_vehicles"] = 25       # kept equal to nb_vehicles so the observation can still represent all of them in range
 
 # Longitudinal controller (IDM-based ACC) targets, set by RL actions
 sim_params["target_veh_short_gap"] = 1.0   # seconds
@@ -108,7 +108,7 @@ road_params["lane_width"] = 3.2
 road_params["max_road_speed"] = 100.0   # set high; actual cap comes from vType maxSpeed
 road_params["min_road_speed"] = 1.0
 road_params["lane_change_duration"] = 4
-road_params["speed_range"] = np.array([15, 35])   # surrounding traffic speed range, m/s
+road_params["speed_range"] = np.array([10, 40])   # surrounding traffic speed range, m/s (was [15,35] -- wider/less predictable)
 road_params["overtake_right"] = "true"
 road_params["nodes"] = np.array([[0.0, 0.0], [400.0, 0.0], [1000.0, 0.0], [3000.0, 0.0], [5000.0, 0.0]])
 road_params["edges"] = ["add", "start", "highway", "exit"]

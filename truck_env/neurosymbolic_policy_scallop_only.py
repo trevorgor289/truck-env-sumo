@@ -14,30 +14,28 @@ action preference. So the critic (value_net, fed by the standard
 mlp_extractor) stays a normal learned component -- only the actor becomes
 MLP -> Scallop -> action.
 
-CAUTION -- known structural limitation, not fully fixed by the temperature
-scaling below: merge_planner.scl only gives 3 of the 8 actions (LANE_LEFT,
-LANE_RIGHT, INC_SPEED) any safety precondition at all; the other 5
-(SHORT_GAP, MEDIUM_GAP, LONG_GAP, DEC_SPEED, MAINTAIN) are each defined as
-`rel next_action(X) = ego_lane(_)`, which is unconditionally true whenever
-any ego_lane fact exists -- i.e. always. None of those 5 rules reference
-unsafe_gap/leader_close (the only facts fact_mlp produces), so their output
-tag is a hardcoded constant 1.0 with zero gradient w.r.t. any trainable
-parameter here, exactly, for every input. This is fine for the
-parallel-combine architecture (neurosymbolic_policy.py), where a free
-action_net branch supplies full-rank preferences and Scallop's term is an
-additive veto nudge; it is a real problem here, where Scallop's output has
-to be the entire policy: the model can never learn a preference among those
-5 actions, full stop, no matter how it trains. Confirmed against a live
-checkpoint: raw next_action tags were exactly
-[1.0, 1.0, 1.0, 0.26, 1.0, 0.0, 0.66, 1.0], with entropy_loss/approx_kl/
-policy_gradient_loss all consistent with a near-uniform, barely-updating
-policy. The temperature scaling below sharpens the 3 gated actions'
-signal (fixing e.g. a mathematically-impossible LANE_LEFT at lane 0 still
-drawing ~5.6% probability), but does not and cannot fix the 5-action dead
-zone -- that needs merge_planner.scl itself to express a full per-action
-utility (closer to PacMan-Maze's differentiable path-length scoring) rather
-than a partial veto, which is a larger, shared-file change affecting the
-DQN scallop-only variant too.
+HISTORY, for context on the two design changes below:
+
+1. Originally, merge_planner.scl (the file every other policy here still
+   uses) only gave 3 of the 8 actions (LANE_LEFT, LANE_RIGHT, INC_SPEED) any
+   safety precondition; the other 5 were `rel next_action(X) = ego_lane(_)`,
+   unconditionally true, tag exactly 1.0 with zero gradient w.r.t. any
+   trainable parameter -- the model could never learn a preference among
+   those 5, full stop. Confirmed against a live checkpoint at the time: raw
+   next_action tags were exactly [1.0, 1.0, 1.0, 0.26, 1.0, 0.0, 0.66, 1.0].
+
+2. This policy now points at merge_planner_weighted.scl instead (a separate
+   file -- the shared merge_planner.scl and every policy still using it are
+   untouched). Every rule there, including all 8 next_action(...) rules, is
+   ANDed with its own learned, randomly-initialized confidence weight
+   (self.rule_weights below). That incidentally fixes point 1: each of the
+   previously-dead 5 actions now has its own trainable w_next_* weight
+   multiplying its tag, so there's a real gradient path for all 8 actions,
+   not just 3. lane_exists is still left a hard/certain fact (a genuinely
+   certain structural property of the road), and the existing safety logic
+   (safe_lane, can_change_left/right, can_increase_speed) is unchanged --
+   the learned weights multiply an additional confidence on top of that
+   logic, they don't replace it.
 """
 
 import os
@@ -49,7 +47,7 @@ from torch.distributions import Categorical
 
 import scallopy
 
-SCL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "merge_planner.scl")
+SCL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "merge_planner_weighted.scl")
 
 NB_LANES = 3
 ACTION_SYMBOLS = [
@@ -60,6 +58,18 @@ NB_ACTIONS = len(ACTION_SYMBOLS)
 NB_FACT_OUTPUTS = NB_LANES + 1  # 3x unsafe_gap + 1x leader_close
 
 EGO_LANE_IDX = 2
+
+# One learned confidence weight per rule in merge_planner_weighted.scl, in the
+# same order as that file's w_* type declarations. Each is ANDed into its
+# rule's body as an auxiliary input fact -- see merge_planner_weighted.scl's
+# header comment for why a *learned* rule weight has to be supplied this way
+# rather than as a `rel 0.9 :: head = body` compile-time tag.
+RULE_WEIGHT_NAMES = [
+    "w_safe_lane", "w_can_change_left", "w_can_change_right", "w_can_increase_speed",
+    "w_next_short_gap", "w_next_medium_gap", "w_next_long_gap", "w_next_inc_speed",
+    "w_next_dec_speed", "w_next_lane_left", "w_next_lane_right", "w_next_maintain",
+]
+NB_RULE_WEIGHTS = len(RULE_WEIGHT_NAMES)
 
 
 class ScallopOnlyPolicy(ActorCriticPolicy):
@@ -84,10 +94,19 @@ class ScallopOnlyPolicy(ActorCriticPolicy):
                 "ego_lane": [(l,) for l in range(NB_LANES)],
                 "unsafe_gap": [(l,) for l in range(NB_LANES)],
                 "leader_close": [(0,)],
+                **{name: [(0,)] for name in RULE_WEIGHT_NAMES},
             },
             output_mappings={"next_action": list(range(NB_ACTIONS))},
             dispatch="serial",
         )
+
+        # One learned weight per rule, randomly initialized (not a fixed
+        # constant): torch.randn gives each an independent draw from a
+        # standard normal, so sigmoid(weight) starts spread out around 0.5
+        # rather than all identical. Trained like any other parameter here --
+        # picked up by the optimizer rebuild below since it's declared before
+        # that runs.
+        self.rule_weights = nn.Parameter(torch.randn(NB_RULE_WEIGHTS))
 
         # Scallop's next_action tags live in [0,1] -- too narrow a range to use
         # directly as Categorical logits (softmax([1,1,1,.26,1,0,.66,1]) is
@@ -139,7 +158,16 @@ class ScallopOnlyPolicy(ActorCriticPolicy):
 
     def _action_distribution(self, obs, features):
         ego_lane, unsafe_gap, leader_close = self._symbolic_facts(obs.float(), features)
-        result = self.planner(ego_lane=ego_lane, unsafe_gap=unsafe_gap, leader_close=leader_close)
+        batch = obs.shape[0]
+        rule_weight_probs = torch.sigmoid(self.rule_weights)
+        rule_weight_kwargs = {
+            name: rule_weight_probs[i].expand(batch, 1)
+            for i, name in enumerate(RULE_WEIGHT_NAMES)
+        }
+        result = self.planner(
+            ego_lane=ego_lane, unsafe_gap=unsafe_gap, leader_close=leader_close,
+            **rule_weight_kwargs,
+        )
         next_action_scores = result["next_action"] if isinstance(result, dict) else result
         scaled_logits = (next_action_scores - 0.5) * torch.exp(self._log_temperature)
         return Categorical(logits=scaled_logits)
